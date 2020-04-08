@@ -130,6 +130,37 @@ public class ARWorldMapController : MonoBehaviour
     }
 
 #if UNITY_IOS
+
+    public delegate void OnARWorldMapGenerated(ARWorldMap? worldMap);
+    public IEnumerator GetARWorldMapAsync(OnARWorldMapGenerated onARWorldMapGenerated)
+    {
+        var sessionSubsystem = (ARKitSessionSubsystem)m_ARSession.subsystem;
+        if (sessionSubsystem == null)
+        {
+            Log("No session subsystem available. Could not save.");
+            onARWorldMapGenerated?.Invoke(null);
+            yield break;
+        }
+
+        var request = sessionSubsystem.GetARWorldMapAsync();
+
+        while (!request.status.IsDone())
+            yield return null;
+
+        if (request.status.IsError())
+        {
+            Log(string.Format("Session serialization failed with status {0}", request.status));
+            onARWorldMapGenerated?.Invoke(null);
+            yield break;
+        }
+
+        var worldMap = request.GetWorldMap();
+        request.Dispose();
+
+        onARWorldMapGenerated?.Invoke(worldMap);
+    }
+
+
     IEnumerator Save()
     {
         var sessionSubsystem = (ARKitSessionSubsystem)m_ARSession.subsystem;
@@ -152,8 +183,14 @@ public class ARWorldMapController : MonoBehaviour
 
         var worldMap = request.GetWorldMap();
         request.Dispose();
-
+        
         SaveAndDisposeWorldMap(worldMap);
+    }
+
+    public void LoadARWorldMap(ARWorldMap worldMap)
+    {
+        var sessionSubsystem = (ARKitSessionSubsystem)m_ARSession.subsystem;
+        sessionSubsystem.ApplyWorldMap(worldMap);
     }
 
     IEnumerator Load()
