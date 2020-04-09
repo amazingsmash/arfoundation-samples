@@ -1,10 +1,7 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
-using System.Diagnostics;
 using System.Net;
 
 public interface ITCPEndListener
@@ -16,6 +13,8 @@ public interface ITCPEndListener
 
 public abstract class TCPEnd
 {
+
+    private const int PACKET_MAX_SIZE = 1024;
     public enum Status
     {
         READY, NOT_READY
@@ -27,7 +26,6 @@ public abstract class TCPEnd
 
     public abstract TcpClient OtherEnd { get; }
     public bool IsReady { get; protected set; }
-    
 
     public TCPEnd(string ip, int port, ITCPEndListener listener)
     {
@@ -35,7 +33,6 @@ public abstract class TCPEnd
         this.port = port;
         this.listener = listener;
     }
-
 
     /// <summary>   
     /// Send message to client using socket connection.     
@@ -59,12 +56,12 @@ public abstract class TCPEnd
 
         try
         {
+            var encapsulatedMsg = EncapsulateMessage(byteArray);
             // Get a stream object for writing.             
             NetworkStream stream = OtherEnd.GetStream();
             if (stream.CanWrite)
             {
-                stream.Write(byteArray, 0, byteArray.Length);
-                listener.OnStatusMessage("Server sent his message - should be received by client");
+                stream.Write(encapsulatedMsg, 0, encapsulatedMsg.Length);
             }
         }
         catch (SocketException socketException)
@@ -72,10 +69,60 @@ public abstract class TCPEnd
             listener.OnStatusMessage("Socket exception: " + socketException);
         }
     }
+
+    private byte[] EncapsulateMessage(byte[] messageLoad)
+    {
+        int length = messageLoad.Length;
+        byte[] messageHeader = BitConverter.GetBytes(length);
+        var message = Concat(messageHeader, messageLoad);
+        if (message.Length != sizeof(int) + messageLoad.Length) { Console.WriteLine("Problem encoding"); }
+        return message;
+    }
+
+    public static byte[] Concat(byte[] x, byte[] y)
+    {
+        var z = new byte[x.Length + y.Length];
+        x.CopyTo(z, 0);
+        y.CopyTo(z, x.Length);
+        return z;
+    }
+
+    public static byte[] ReadMessageFromNetworkStreamSync(NetworkStream stream)
+    {
+        byte[] messageLoad = null;
+        //Read first packet
+        Byte[] packetBuffer = new Byte[PACKET_MAX_SIZE];
+        int packetLength = stream.Read(packetBuffer, 0, packetBuffer.Length);
+        if (packetLength < sizeof(int)) {
+            Console.WriteLine("Malformed packet received.");
+            return null;
+        }
+        int messageLength = BitConverter.ToInt32(packetBuffer, 0); //Assuming 4 bytes
+
+        messageLoad = new byte[packetLength - sizeof(int)];
+        Array.Copy(packetBuffer, 4, messageLoad, 0, messageLoad.Length);
+        int remainingBytes = messageLength - messageLoad.Length;
+
+        //Reading the rest
+        while (remainingBytes > 0)
+        {
+            packetLength = stream.Read(packetBuffer, 0, Math.Min(remainingBytes, packetBuffer.Length));
+            if (packetLength > 0)
+            {
+                var nml = new byte[messageLoad.Length + packetLength];
+                messageLoad.CopyTo(nml, 0);
+                Array.Copy(packetBuffer, 0, nml, messageLoad.Length, packetLength);
+                messageLoad = nml;
+                remainingBytes = messageLength - messageLoad.Length;
+            }
+        }
+        return messageLoad;
+    }
+
 }
 
 
-public class TCPServer: TCPEnd
+public class TCPServer : TCPEnd
 {
     #region private members     
     /// <summary>   
@@ -96,7 +143,7 @@ public class TCPServer: TCPEnd
     #endregion
 
     // Use this for initialization
-    public TCPServer(string ip, int port, ITCPEndListener listener):
+    public TCPServer(string ip, int port, ITCPEndListener listener) :
         base(ip, port, listener)
     {
         // Start TcpServer background thread        
@@ -119,28 +166,17 @@ public class TCPServer: TCPEnd
             listener.OnStatusChanged(Status.READY);
 
             listener.OnStatusMessage("Server is listening");
-            Byte[] bytes = new Byte[1024];
-            while (true)
-            {
-                using (connectedTcpClient = tcpListener.AcceptTcpClient())
-                {
-                    // Get a stream object for reading                  
-                    using (NetworkStream stream = connectedTcpClient.GetStream())
-                    {
-                        int length;
-                        // Read incomming stream into byte arrary.                      
-                        while ((length = stream.Read(bytes, 0, bytes.Length)) != 0)
-                        {
-                            var incommingData = new byte[length];
-                            Array.Copy(bytes, 0, incommingData, 0, length);
-                            // Convert byte array to string message.                            
-                            //string clientMessage = Encoding.ASCII.GetString(incommingData);
-                            //Debug.Log("client message received as: " + clientMessage); 
 
-                            if (listener != null)
-                            {
-                                listener.OnMessageReceived(incommingData);
-                            }
+            using (connectedTcpClient = tcpListener.AcceptTcpClient())
+            {
+                using (NetworkStream stream = connectedTcpClient.GetStream())
+                {
+                    while (true)
+                    {
+                        var bytes = ReadMessageFromNetworkStreamSync(stream);
+                        if (listener != null)
+                        {
+                            listener.OnMessageReceived(bytes);
                         }
                     }
                 }
@@ -151,13 +187,14 @@ public class TCPServer: TCPEnd
             listener.OnStatusMessage("SocketException " + socketException.ToString());
         }
     }
+
 }
 
 public class TCPClient : TCPEnd
-{  	
-	#region private members 	
-	private TcpClient socketConnection; 	
-	private Thread clientReceiveThread;
+{
+    #region private members 	
+    private TcpClient socketConnection;
+    private Thread clientReceiveThread;
     public override TcpClient OtherEnd => socketConnection;
     #endregion
 
@@ -175,44 +212,47 @@ public class TCPClient : TCPEnd
     /// <summary> 	
     /// Setup socket connection. 	
     /// </summary> 	
-    public void ConnectToTCPServer () { 		
-		try {  			
-			clientReceiveThread = new Thread (new ThreadStart(ListenForData)); 			
-			clientReceiveThread.IsBackground = true; 			
-			clientReceiveThread.Start();  		
-		} 		
-		catch (Exception e) {
-            listener.OnStatusMessage("On client connect exception " + e); 		
-		} 	
-	}  	
-	/// <summary> 	
-	/// Runs in background clientReceiveThread; Listens for incomming data. 	
-	/// </summary>     
-	private void ListenForData() { 		
-		try { 			
-			socketConnection = new TcpClient(ip, port);  			
-			Byte[] bytes = new Byte[1024];
+    public void ConnectToTCPServer()
+    {
+        try
+        {
+            clientReceiveThread = new Thread(new ThreadStart(ListenForData));
+            clientReceiveThread.IsBackground = true;
+            clientReceiveThread.Start();
+        }
+        catch (Exception e)
+        {
+            listener.OnStatusMessage("On client connect exception " + e);
+        }
+    }
+    /// <summary> 	
+    /// Runs in background clientReceiveThread; Listens for incomming data. 	
+    /// </summary>     
+    private void ListenForData()
+    {
+        try
+        {
+            socketConnection = new TcpClient(ip, port);
+            Byte[] bytes = new Byte[1024];
             IsReady = socketConnection != null;
-            while (true) { 				
-				// Get a stream object for reading 				
-				using (NetworkStream stream = socketConnection.GetStream()) { 					
-					int length; 					
-					// Read incomming stream into byte arrary. 					
-					while ((length = stream.Read(bytes, 0, bytes.Length)) != 0) { 						
-						var incommingData = new byte[length]; 						
-						Array.Copy(bytes, 0, incommingData, 0, length); 						
-						// Convert byte array to string message. 						
-						//string serverMessage = Encoding.ASCII.GetString(incommingData);
-                        if (listener != null)
-                        {
-                            listener.OnMessageReceived(incommingData);
-                        }				
-					} 				
-				} 			
-			}
-        }         
-		catch (SocketException socketException) {
-            listener.OnStatusMessage("Socket exception: " + socketException);         
-		}     
-	}
+            listener.OnStatusChanged(Status.READY);
+
+            // Get a stream object for reading 				
+            using (NetworkStream stream = socketConnection.GetStream())
+            {
+                while (true)
+                {
+                    var messageLoad = ReadMessageFromNetworkStreamSync(stream);
+                    if (listener != null && messageLoad != null)
+                    {
+                        listener.OnMessageReceived(messageLoad);
+                    }
+                }
+            }
+        }
+        catch (SocketException socketException)
+        {
+            listener.OnStatusMessage("Socket exception: " + socketException);
+        }
+    }
 }

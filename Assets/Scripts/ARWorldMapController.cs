@@ -190,7 +190,9 @@ public class ARWorldMapController : MonoBehaviour
     public void LoadARWorldMap(ARWorldMap worldMap)
     {
         var sessionSubsystem = (ARKitSessionSubsystem)m_ARSession.subsystem;
+        Debug.Log("Applying ARWM");
         sessionSubsystem.ApplyWorldMap(worldMap);
+        Debug.Log("ARWM Applied");
     }
 
     IEnumerator Load()

@@ -11,6 +11,8 @@ public class SharedARClient : MonoBehaviour, ITCPEndListener
     public string serverIP;
     IPAddress ipAddress;
     Socket socketHandler;
+
+    private string screenString = "";
     public Text screenMessageText;
 
     TCPClient client;
@@ -38,7 +40,10 @@ public class SharedARClient : MonoBehaviour, ITCPEndListener
     // Update is called once per frame
     void Update()
     {
-
+        if (screenString != screenMessageText.text)
+        {
+            screenMessageText.text = screenString;
+        }
     }
 
 
@@ -50,18 +55,28 @@ public class SharedARClient : MonoBehaviour, ITCPEndListener
         //    s = $"{s}, {b}";
         //}
         //Debug.Log(s);
-        screenMessageText.text = $"MSG RECEIVED LENGTH: {msg.Length}";
+        screenString = $"MSG RECEIVED LENGTH: {msg.Length}";
+        Debug.Log(screenString);
         //ARWorldMap
         if (ARWorldMapController != null)
         {
-            NativeArray<byte> nativeArray = new NativeArray<byte>(msg, Allocator.Temp);
+            Debug.Log("Trying to deserialize ARWM 1");
+            NativeArray<byte> nativeArray = new NativeArray<byte>(msg, Allocator.Persistent);
+            Debug.Log("Trying to deserialize ARWM 2");
             bool success = ARWorldMap.TryDeserialize(nativeArray, out ARWorldMap worldMap);
+            Debug.Log("Trying to deserialize ARWM 3");
+            nativeArray.Dispose();
+            Debug.Log("Trying to deserialize ARWM 4");
             if (success)
             {
+                Debug.Log("ARWM Deserialized");
+                Debug.Log("Trying to deserialize ARWM 5");
                 if (worldMap.valid)
                 {
+                    Debug.Log("Trying to deserialize ARWM 6");
                     ARWorldMapController.LoadARWorldMap(worldMap);
-                    screenMessageText.text = "SUCESS";
+                    Debug.Log("Trying to deserialize ARWM 7");
+                    screenString = "SUCESS";
                 }
             }
         }
@@ -70,6 +85,10 @@ public class SharedARClient : MonoBehaviour, ITCPEndListener
     public void OnStatusChanged(TCPEnd.Status status)
     {
         Debug.Log(status);
+        if (status == TCPEnd.Status.READY)
+        {
+            client.SendMessage("SEND ME DATA");
+        }
     }
 
     public void OnStatusMessage(string msg)

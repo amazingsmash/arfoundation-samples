@@ -1,13 +1,8 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Net;
-using System.Net.Sockets;
-using System.Text;
+﻿using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
-using UnityEngine.XR.ARKit;
 using Unity.Collections;
+
 
 public class SharedARServer : MonoBehaviour, ITCPEndListener
 {
@@ -38,11 +33,14 @@ public class SharedARServer : MonoBehaviour, ITCPEndListener
             //server.SendMessage($"HOLA {Time.time}");
 
 #if UNITY_EDITOR
-            byte[] msgBytes = new byte[] { 1, 2, 3, 4 };
+            byte[] msgBytes = new byte[211094];
+            for(int i = 0; i < msgBytes.Length; i++) { msgBytes[i] = (byte)i; }
+
             NativeArray<byte> natArray = new NativeArray<byte>(msgBytes, Allocator.Persistent);
             byte[] bs = natArray.ToArray();
             server.SendMessage(msgBytes);
             natArray.Dispose();
+            Debug.Log("Message sent");
 #else
             IEnumerator routine = ARWorldMapController.GetARWorldMapAsync(delegate (ARWorldMap? arWorldMap)
             {
@@ -52,8 +50,10 @@ public class SharedARServer : MonoBehaviour, ITCPEndListener
                     {
                         NativeArray<byte> nativeArray = wm.Serialize(Allocator.Temp);
                         byte[] bytes = nativeArray.ToArray();
+                        Debug.Log($"Trying to send ARWM Size: {bytes.Length}");
                         server.SendMessage(bytes);
                         nativeArray.Dispose();
+                        Debug.Log("ARWM SENT");
                     }
                     catch (Exception ex)
                     {
@@ -73,7 +73,7 @@ public class SharedARServer : MonoBehaviour, ITCPEndListener
 
     public void OnStatusChanged(TCPEnd.Status status)
     {
-        SendARWorldMapToClient();
+        Debug.Log("Server Status:" + status);
     }
 
     public void OnMessageReceived(byte[] msg)
@@ -87,6 +87,8 @@ public class SharedARServer : MonoBehaviour, ITCPEndListener
 
         var stringMsg = Encoding.ASCII.GetString(msg);
         Debug.Log("Server Received:" + stringMsg);
+
+        SendARWorldMapToClient();
     }
 
     public void OnStatusMessage(string msg)
