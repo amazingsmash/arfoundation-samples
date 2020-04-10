@@ -3,6 +3,8 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Net;
+using System.Net.NetworkInformation;
+using System.Collections.Generic;
 
 public interface ITCPEndListener
 {
@@ -119,10 +121,33 @@ public abstract class TCPEnd
         return messageLoad;
     }
 
+    public static IPAddress GetFirstLocalIPAddressWithOpenTCPPort(int port)
+    {
+        foreach (NetworkInterface ni in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            foreach (UnicastIPAddressInformation ip in ni.GetIPProperties().UnicastAddresses)
+            {
+                string address = ip.Address.ToString();
+                try
+                {
+                    var conn = new TcpClient(address, port);
+                    if (conn.Connected)
+                    {
+                        conn.Close();
+                        return ip.Address;
+                    }
+                }
+                catch (Exception) { }
+            }
+        }
+        return null;
+    }
+
+   
 }
 
 
-public class TCPServer : TCPEnd
+public class TCPServer : TCPEnd, IDisposable
 {
     #region private members     
     /// <summary>   
@@ -138,6 +163,8 @@ public class TCPServer : TCPEnd
     /// Create handle to connected tcp client.  
     /// </summary>  
     private TcpClient connectedTcpClient;
+
+    NetworkStream stream;
 
     public override TcpClient OtherEnd => connectedTcpClient;
     #endregion
@@ -158,25 +185,24 @@ public class TCPServer : TCPEnd
     private void ListenForIncommingRequests()
     {
         try
-        {
-            // Create listener on localhost port 8052.          
+        {        
             tcpListener = new TcpListener(IPAddress.Parse(ip), port);
             tcpListener.Start();
             IsReady = true;
             listener.OnStatusChanged(Status.READY);
 
-            listener.OnStatusMessage("Server is listening");
+            listener.OnStatusMessage($"Server at {ip}:{port}");
 
             using (connectedTcpClient = tcpListener.AcceptTcpClient())
             {
-                using (NetworkStream stream = connectedTcpClient.GetStream())
+                using (stream = connectedTcpClient.GetStream())
                 {
-                    while (true)
+                    while (stream.CanRead)
                     {
-                        var bytes = ReadMessageFromNetworkStreamSync(stream);
-                        if (listener != null)
+                        var messageLoad = ReadMessageFromNetworkStreamSync(stream);
+                        if (listener != null && messageLoad != null)
                         {
-                            listener.OnMessageReceived(bytes);
+                            listener.OnMessageReceived(messageLoad);
                         }
                     }
                 }
@@ -188,19 +214,26 @@ public class TCPServer : TCPEnd
         }
     }
 
+    public void Dispose()
+    {
+        tcpListener.Stop();
+        connectedTcpClient.Close();
+        stream.Close();
+    }
+
 }
 
 public class TCPClient : TCPEnd
 {
     #region private members 	
-    private TcpClient socketConnection;
+    private TcpClient tcpClient;
     private Thread clientReceiveThread;
-    public override TcpClient OtherEnd => socketConnection;
+    public override TcpClient OtherEnd => tcpClient;
     #endregion
 
     public bool IsListening
     {
-        get { return socketConnection != null; }
+        get { return tcpClient != null; }
     }
 
 
@@ -232,13 +265,13 @@ public class TCPClient : TCPEnd
     {
         try
         {
-            socketConnection = new TcpClient(ip, port);
+            tcpClient = new TcpClient(ip, port);
             Byte[] bytes = new Byte[1024];
-            IsReady = socketConnection != null;
+            IsReady = tcpClient != null;
             listener.OnStatusChanged(Status.READY);
 
             // Get a stream object for reading 				
-            using (NetworkStream stream = socketConnection.GetStream())
+            using (NetworkStream stream = tcpClient.GetStream())
             {
                 while (true)
                 {

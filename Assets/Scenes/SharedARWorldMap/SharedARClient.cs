@@ -5,46 +5,41 @@ using System.Net;
 using UnityEngine.XR.ARKit;
 using Unity.Collections;
 using UnityEngine.UI;
+using UnityEngine.UIElements;
 
 public class SharedARClient : MonoBehaviour, ITCPEndListener
 {
-    public string serverIP;
+    //public string serverIP;
     IPAddress ipAddress;
     Socket socketHandler;
 
-    private string screenString = "";
-    public Text screenMessageText;
 
     TCPClient client;
 
     public ARWorldMapController ARWorldMapController = null;
 
+    public InputField ipInputField = null;
+
+
     // Use this for initialization
     void Start()
     {
-        ipAddress = IPAddress.Parse(serverIP);
-        //socketHandler = NetUtils.OpenClientSocket(ipAddress, SharedARServer.PORT);
-        //if (socketHandler != null)
-        //{
-        //    Debug.Log("Client listening.");
-        //}
+        if (ipInputField != null && ipInputField.text != "") {
+            ipAddress = IPAddress.Parse(ipInputField.text);
+        }
+        else
+        {
+            ipAddress = IPAddress.Parse("127.0.0.1");
+        }
 
+        //ipAddress = TCPEnd.GetFirstLocalIPAddressWithOpenTCPPort(SharedARServer.PORT);
 
-        client = new TCPClient("127.0.0.1", SharedARServer.PORT, this);
+        client = new TCPClient(ipAddress.ToString(), SharedARServer.PORT, this);
 
         client.ConnectToTCPServer();
-
-        //client.SendMessage("READY");
     }
 
-    // Update is called once per frame
-    void Update()
-    {
-        if (screenString != screenMessageText.text)
-        {
-            screenMessageText.text = screenString;
-        }
-    }
+
 
 
     public void OnMessageReceived(byte[] msg)
@@ -55,28 +50,22 @@ public class SharedARClient : MonoBehaviour, ITCPEndListener
         //    s = $"{s}, {b}";
         //}
         //Debug.Log(s);
-        screenString = $"MSG RECEIVED LENGTH: {msg.Length}";
-        Debug.Log(screenString);
+        SharedARUIManager.sharedARStatusMessage = $"MSG RECEIVED LENGTH: {msg.Length}";
         //ARWorldMap
         if (ARWorldMapController != null)
         {
-            Debug.Log("Trying to deserialize ARWM 1");
             NativeArray<byte> nativeArray = new NativeArray<byte>(msg, Allocator.Persistent);
-            Debug.Log("Trying to deserialize ARWM 2");
+            Debug.Log("Trying to deserialize ARWM");
             bool success = ARWorldMap.TryDeserialize(nativeArray, out ARWorldMap worldMap);
-            Debug.Log("Trying to deserialize ARWM 3");
             nativeArray.Dispose();
-            Debug.Log("Trying to deserialize ARWM 4");
             if (success)
             {
                 Debug.Log("ARWM Deserialized");
-                Debug.Log("Trying to deserialize ARWM 5");
                 if (worldMap.valid)
                 {
-                    Debug.Log("Trying to deserialize ARWM 6");
+                    Debug.Log("ARWM Valid");
                     ARWorldMapController.LoadARWorldMap(worldMap);
-                    Debug.Log("Trying to deserialize ARWM 7");
-                    screenString = "SUCESS";
+                    SharedARUIManager.sharedARStatusMessage = "SUCESS";
                 }
             }
         }

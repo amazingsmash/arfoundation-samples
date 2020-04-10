@@ -2,14 +2,15 @@
 using UnityEngine;
 using UnityEngine.UI;
 using Unity.Collections;
-
+using System.Collections.Generic;
+using System.Collections;
+using UnityEngine.XR.ARKit;
+using System;
 
 public class SharedARServer : MonoBehaviour, ITCPEndListener
 {
-    public Text screenMessageText;
-
     public const int PORT = 4242;
-    TCPServer server;
+    TCPServer server = null;
 
     public ARWorldMapController ARWorldMapController = null;
 
@@ -17,8 +18,8 @@ public class SharedARServer : MonoBehaviour, ITCPEndListener
     void Start()
     {
         var myIP = NetUtils.GetMyIP();
-        screenMessageText.text = myIP.ToString();
-        server = new TCPServer("127.0.0.1", PORT, this);
+        string myIPString = myIP.ToString();
+        server = new TCPServer(myIPString, PORT, this);
     }
 
     // Update is called once per frame
@@ -40,7 +41,7 @@ public class SharedARServer : MonoBehaviour, ITCPEndListener
             byte[] bs = natArray.ToArray();
             server.SendMessage(msgBytes);
             natArray.Dispose();
-            Debug.Log("Message sent");
+            SharedARUIManager.sharedARStatusMessage = "Message sent";
 #else
             IEnumerator routine = ARWorldMapController.GetARWorldMapAsync(delegate (ARWorldMap? arWorldMap)
             {
@@ -50,20 +51,20 @@ public class SharedARServer : MonoBehaviour, ITCPEndListener
                     {
                         NativeArray<byte> nativeArray = wm.Serialize(Allocator.Temp);
                         byte[] bytes = nativeArray.ToArray();
-                        Debug.Log($"Trying to send ARWM Size: {bytes.Length}");
+                        SharedARUIManager.sharedARStatusMessage = $"Trying to send ARWM Size: {bytes.Length}";
                         server.SendMessage(bytes);
                         nativeArray.Dispose();
-                        Debug.Log("ARWM SENT");
+                        SharedARUIManager.sharedARStatusMessage = "ARWM SENT";
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"Problem serializing ARWorldMap. {ex.ToString()}");
+                        SharedARUIManager.sharedARStatusMessage = $"Problem serializing ARWorldMap. {ex.ToString()}";
                         wm.Dispose();
                     }
                 }
                 else
                 {
-                    Debug.LogError("Cannot get ARWorldMap.");
+                    SharedARUIManager.sharedARStatusMessage = "Cannot get ARWorldMap.";
                 }
             });
             StartCoroutine(routine);
@@ -73,7 +74,7 @@ public class SharedARServer : MonoBehaviour, ITCPEndListener
 
     public void OnStatusChanged(TCPEnd.Status status)
     {
-        Debug.Log("Server Status:" + status);
+        SharedARUIManager.sharedARStatusMessage = "Server Status:" + status;
     }
 
     public void OnMessageReceived(byte[] msg)
@@ -86,14 +87,14 @@ public class SharedARServer : MonoBehaviour, ITCPEndListener
         //}
 
         var stringMsg = Encoding.ASCII.GetString(msg);
-        Debug.Log("Server Received:" + stringMsg);
+        SharedARUIManager.sharedARStatusMessage = "Server Received:" + stringMsg;
 
         SendARWorldMapToClient();
     }
 
     public void OnStatusMessage(string msg)
     {
-        Debug.Log($"Received Status: {msg}");
+        SharedARUIManager.sharedARStatusMessage = msg;
     }
 
 }

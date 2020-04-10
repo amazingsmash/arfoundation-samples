@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 
@@ -7,7 +8,15 @@ public static class NetUtils
     public static IPAddress GetMyIP()
     {
         string hostName = Dns.GetHostName(); // Retrive the Name of HOST 
-        return Dns.GetHostEntry(hostName).AddressList[0];
+        IPAddress[] addresses = Dns.GetHostEntry(hostName).AddressList;
+        var ips = (from a in addresses select a.ToString()).ToArray<string>();
+
+        foreach(var s in ips)
+        {
+            if (s.StartsWith("192.168")) { return IPAddress.Parse(s); }
+        }
+
+        return addresses[0];
     }
 
     public static Socket OpenServerSocket(int port)
