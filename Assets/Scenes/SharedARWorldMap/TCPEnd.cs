@@ -5,6 +5,9 @@ using System.Threading;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Collections.Generic;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Formatters.Binary;
+using System.IO;
 
 public interface ITCPEndListener
 {
@@ -15,8 +18,7 @@ public interface ITCPEndListener
 
 public abstract class TCPEnd
 {
-
-    private const int PACKET_MAX_SIZE = 1024;
+    private const int PACKET_MAX_SIZE = 2048;
     public enum Status
     {
         READY, NOT_READY
@@ -45,6 +47,32 @@ public abstract class TCPEnd
         SendMessage(serverMessageAsByteArray);
     }
 
+    /// <summary>   
+    /// Send message to client using socket connection.     
+    /// </summary>  
+    public void SendMessage(object msg)
+    {
+        if (!msg.GetType().IsSerializable)
+        {
+            listener.OnStatusMessage("Object could not be serialized.");
+            return;
+        }
+        try
+        {
+            BinaryFormatter binaryFormatter = new BinaryFormatter();
+            byte[] serverMessageAsByteArray = null;
+            using (MemoryStream memoryStream = new MemoryStream())
+            {
+                binaryFormatter.Serialize(memoryStream, msg);
+                serverMessageAsByteArray = memoryStream.ToArray();
+            }
+            SendMessage(serverMessageAsByteArray);
+        }
+        catch (Exception e)
+        {
+            listener.OnStatusMessage("Object could not be sent:" + e.ToString());
+        }
+    }
 
     /// <summary>   
     /// Send binary message to client using socket connection.     
@@ -95,7 +123,8 @@ public abstract class TCPEnd
         //Read first packet
         Byte[] packetBuffer = new Byte[PACKET_MAX_SIZE];
         int packetLength = stream.Read(packetBuffer, 0, packetBuffer.Length);
-        if (packetLength < sizeof(int)) {
+        if (packetLength < sizeof(int))
+        {
             Console.WriteLine("Malformed packet received.");
             return null;
         }
@@ -143,7 +172,7 @@ public abstract class TCPEnd
         return null;
     }
 
-   
+
 }
 
 
@@ -185,7 +214,7 @@ public class TCPServer : TCPEnd, IDisposable
     private void ListenForIncommingRequests()
     {
         try
-        {        
+        {
             tcpListener = new TcpListener(IPAddress.Parse(ip), port);
             tcpListener.Start();
             IsReady = true;
@@ -223,7 +252,7 @@ public class TCPServer : TCPEnd, IDisposable
 
 }
 
-public class TCPClient : TCPEnd
+public class TCPClient : TCPEnd, IDisposable
 {
     #region private members 	
     private TcpClient tcpClient;
@@ -287,5 +316,10 @@ public class TCPClient : TCPEnd
         {
             listener.OnStatusMessage("Socket exception: " + socketException);
         }
+    }
+
+    public void Dispose()
+    {
+        tcpClient.Close();
     }
 }

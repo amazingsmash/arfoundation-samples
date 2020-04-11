@@ -6,20 +6,17 @@ using UnityEngine.XR.ARKit;
 using Unity.Collections;
 using UnityEngine.UI;
 using UnityEngine.UIElements;
+using System.Runtime.Serialization.Formatters.Binary;
+using System.IO;
 
 public class SharedARClient : MonoBehaviour, ITCPEndListener
 {
     //public string serverIP;
     IPAddress ipAddress;
-    Socket socketHandler;
-
-
     TCPClient client;
 
     public ARWorldMapController ARWorldMapController = null;
-
     public InputField ipInputField = null;
-
 
     // Use this for initialization
     void Start()
@@ -39,11 +36,28 @@ public class SharedARClient : MonoBehaviour, ITCPEndListener
         client.ConnectToTCPServer();
     }
 
-
-
-
     public void OnMessageReceived(byte[] msg)
     {
+        try
+        {
+            BinaryFormatter bf = new BinaryFormatter();
+            MemoryStream serializationStream = new MemoryStream(msg, 0, msg.Length, false, false);
+            //serializationStream.Write(msg, 0, msg.Length);
+            object obj = bf.Deserialize(serializationStream);
+            if (obj != null)
+            {
+                if (obj is AppState)
+                {
+                    AppState appState = obj as AppState;
+                    Debug.Log("AppState received.");
+                }
+            }
+            return;
+        }
+        catch (System.Exception)
+        {
+        }
+
         //string s = "";
         //foreach (var b in msg)
         //{
